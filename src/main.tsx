@@ -733,15 +733,21 @@ function App() {
         </div>
 
         <div className="task-list">
-          {filteredTodos.map((todo) => (
-            <article className={`task-row ${selectedTodoId === todo.id ? 'selected' : ''}`} key={todo.id} onClick={() => setSelectedTodoId(todo.id)}>
+          {filteredTodos.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">✦</div>
+              <h3>{todos.length === 0 ? 'No tasks yet' : 'Nothing matches'}</h3>
+              <p>{todos.length === 0 ? 'Add your first task above — give it a title and hit Add Task.' : 'Try clearing your search or switching the filter.'}</p>
+            </div>
+          ) : filteredTodos.map((todo) => (
+            <article className={`task-row prio-${todo.priority} ${selectedTodoId === todo.id ? 'selected' : ''} ${todo.completed ? 'completed' : ''}`} key={todo.id} onClick={() => setSelectedTodoId(todo.id)}>
               <button className={`check ${todo.completed ? 'done' : ''}`} onClick={(e) => { e.stopPropagation(); void toggleTodo(todo); }}>
                 {todo.completed ? '✓' : ''}
               </button>
               <div className="task-row-body">
                 <strong>{todo.title}</strong>
                 <span>{todo.description || 'No description'}</span>
-                <small><b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b> {todo.tags}</small>
+                <small><b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>{todo.tags ? ` · ${todo.tags}` : ''}</small>
               </div>
               <button className="ghost" onClick={(e) => { e.stopPropagation(); void placeExistingTodo(todo); }}>Board</button>
             </article>
@@ -753,13 +759,17 @@ function App() {
         <header className="topbar">
           <div>
             <h2>{mode === 'canvas' ? 'Canvas Board' : 'List Mode'}</h2>
-            <p>{status}</p>
+            <p className="status">
+              <span className={`status-dot ${/fail|error/i.test(status) ? 'error' : ''}`} aria-hidden="true" />
+              {status}
+            </p>
           </div>
           <div className="actions">
             <button className={mode === 'canvas' ? 'active' : ''} onClick={() => setMode('canvas')}>Canvas</button>
             <button className={mode === 'list' ? 'active' : ''} onClick={() => setMode('list')}>List</button>
-            <button onClick={exportBackup}>Export Backup</button>
-            <button onClick={importBackup}>Import Backup</button>
+            <span className="divider" aria-hidden="true" />
+            <button onClick={exportBackup}>Export</button>
+            <button onClick={importBackup}>Import</button>
           </div>
         </header>
 
@@ -773,14 +783,21 @@ function App() {
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
           >
-            <div className="drop-hint">Paste screenshot with Ctrl+V or drag image files here. Drag cards/images to arrange. Resize from bottom-right.</div>
+            <div className={`drop-hint ${items.length > 0 ? 'dim' : ''}`}>Paste with Ctrl+V or drop image files · drag to arrange · resize from bottom-right</div>
+            {items.length === 0 && (
+              <div className="empty-state">
+                <div className="empty-icon">◇</div>
+                <h3>Your canvas is empty</h3>
+                <p>Click <b>Board</b> on any task in the sidebar to place it here, or paste/drop an image.</p>
+              </div>
+            )}
             {items.map((item) => {
               const style = { left: item.x, top: item.y, width: item.width, height: item.height, zIndex: item.z_index };
               if (item.item_type === 'todo') {
                 const todo = todoMap.get(item.ref_id);
                 if (!todo) return null;
                 return (
-                  <div className={`canvas-card todo-card ${todo.completed ? 'completed' : ''}`} style={style} key={item.id} onPointerDown={(e) => { setSelectedTodoId(todo.id); beginDrag(e, item, 'move'); }}>
+                  <div className={`canvas-card todo-card prio-${todo.priority} ${todo.completed ? 'completed' : ''}`} style={style} key={item.id} onPointerDown={(e) => { setSelectedTodoId(todo.id); beginDrag(e, item, 'move'); }}>
                     <div className="card-head">
                       <b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>
                       <button onPointerDown={(e) => e.stopPropagation()} onClick={() => deleteCanvasItem(item.id)}>×</button>
@@ -837,11 +854,20 @@ function App() {
             <button className="danger" onClick={() => deleteTodo(selectedTodo.id)}>Delete task</button>
           </div>
         ) : (
-          <p className="muted">Select a task to edit. Images pasted while a task is selected will be linked to that task.</p>
+          <div className="empty-state">
+            <div className="empty-icon">◐</div>
+            <h3>No task selected</h3>
+            <p>Click a task in the sidebar to edit details here. Images pasted while a task is selected will link to it.</p>
+          </div>
         )}
-        <div className="sync-card">
-          <h3>Cloud-ready metadata</h3>
-          <p>Todos, board items, and attachments already include UUIDs, updated_at, sync_status, soft-delete/version fields for future Supabase/S3/R2 sync.</p>
+        <div className="tips-card">
+          <h3>Shortcuts</h3>
+          <ul>
+            <li><span>Paste image</span><kbd>Ctrl + V</kbd></li>
+            <li><span>Drop image files</span><kbd>Drag</kbd></li>
+            <li><span>Commit edit</span><kbd>Enter</kbd></li>
+            <li><span>Cancel edit</span><kbd>Esc</kbd></li>
+          </ul>
         </div>
       </aside>
       {toast && (
