@@ -140,7 +140,7 @@ h1, h2, h3, p { margin: 0; }
 .toolbar { margin: 18px 0 12px; }
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 4px;
   padding: 4px;
   border-radius: var(--radius);
@@ -199,6 +199,23 @@ h1, h2, h3, p { margin: 0; }
 }
 .task-row.completed strong { text-decoration: line-through; color: var(--text-faint); }
 .task-row.completed { opacity: 0.7; }
+.task-row.trash-row {
+  grid-template-columns: 30px 1fr auto;
+  border-style: dashed;
+  opacity: 0.9;
+}
+.task-row.trash-row:hover { opacity: 1; }
+.trash-glyph {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.26);
+  font-weight: 700;
+}
 
 .check {
   width: 26px; height: 26px;
@@ -357,6 +374,13 @@ h1, h2, h3, p { margin: 0; }
   background: var(--surface);
   animation: card-in .22s ease-out;
 }
+.detail-card.trash-detail {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-style: dashed;
+}
+.detail-card.trash-detail p { color: var(--text-dim); font-size: 13px; margin: 4px 0 7px; }
+.detail-card.trash-detail small { color: var(--text-faint); display: inline-flex; align-items: center; gap: 6px; }
 
 .empty-state {
   display: grid;

@@ -313,6 +313,38 @@ fn list_todos(app: AppHandle) -> Result<Vec<Todo>, String> {
 }
 
 #[tauri::command]
+fn list_deleted_todos(app: AppHandle) -> Result<Vec<Todo>, String> {
+    init_db_inner(&app)?;
+    let c = conn(&app)?;
+    let mut stmt = c
+        .prepare(
+            "SELECT id,title,description,completed,priority,due_date,tags,created_at,updated_at,deleted_at,sync_status,version
+             FROM todos WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, updated_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Todo {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                description: row.get(2)?,
+                completed: row.get::<_, i64>(3)? == 1,
+                priority: row.get(4)?,
+                due_date: row.get(5)?,
+                tags: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+                deleted_at: row.get(9)?,
+                sync_status: row.get(10)?,
+                version: row.get(11)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn create_todo(app: AppHandle, input: CreateTodoInput) -> Result<Todo, String> {
     init_db_inner(&app)?;
     let title = input.title.trim();
@@ -1050,6 +1082,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             init_db,
             list_todos,
+            list_deleted_todos,
             create_todo,
             update_todo,
             toggle_todo,

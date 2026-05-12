@@ -6,6 +6,7 @@ import './styles.css';
 
 type Priority = 'low' | 'medium' | 'high';
 type Mode = 'list' | 'canvas';
+type TaskFilter = 'all' | 'active' | 'done' | 'trash';
 
 type Todo = {
   id: string;
@@ -104,6 +105,10 @@ async function webInvoke<T>(command: string, args: Record<string, unknown>): Pro
       return undefined as T;
     case 'list_todos':
       return db.todos.filter((todo) => !todo.deleted_at).sort((a, b) => Number(a.completed) - Number(b.completed)) as T;
+    case 'list_deleted_todos':
+      return db.todos
+        .filter((todo) => todo.deleted_at)
+        .sort((a, b) => String(b.deleted_at).localeCompare(String(a.deleted_at))) as T;
     case 'list_board_items':
       return db.boardItems as T;
     case 'list_attachments':
@@ -285,11 +290,12 @@ function ConfirmDialog({ request, onResolve }: ConfirmDialogProps) {
 function App() {
   const [mode, setMode] = useState<Mode>('canvas');
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [deletedTodos, setDeletedTodos] = useState<Todo[]>([]);
   const [items, setItems] = useState<BoardItem[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'active' | 'done'>('all');
+  const [filter, setFilter] = useState<TaskFilter>('all');
   const [draft, setDraft] = useState({ title: '', description: '', priority: 'medium' as Priority, tags: '' });
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null);
   const [status, setStatus] = useState('Ready');
@@ -337,12 +343,14 @@ function App() {
 
   const refresh = useCallback(async () => {
     await call('init_db');
-    const [todoData, boardData, attachmentData] = await Promise.all([
+    const [todoData, deletedTodoData, boardData, attachmentData] = await Promise.all([
       call<Todo[]>('list_todos'),
+      call<Todo[]>('list_deleted_todos'),
       call<BoardItem[]>('list_board_items', { boardId: 'main' }),
       call<Attachment[]>('list_attachments', { boardId: 'main' }),
     ]);
     setTodos(todoData);
+    setDeletedTodos(deletedTodoData);
     setItems(boardData);
     setAttachments(attachmentData);
   }, []);
@@ -373,15 +381,23 @@ function App() {
   const todoMap = useMemo(() => new Map(todos.map((todo) => [todo.id, todo])), [todos]);
   const attachmentMap = useMemo(() => new Map(attachments.map((attachment) => [attachment.id, attachment])), [attachments]);
 
-  const filteredTodos = useMemo(() => {
+  const matchesQuery = useCallback((todo: Todo) => {
     const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return `${todo.title} ${todo.description} ${todo.tags}`.toLowerCase().includes(q);
+  }, [query]);
+
+  const filteredTodos = useMemo(() => {
     return todos.filter((todo) => {
+      if (filter === 'trash') return false;
       if (filter === 'active' && todo.completed) return false;
       if (filter === 'done' && !todo.completed) return false;
-      if (!q) return true;
-      return `${todo.title} ${todo.description} ${todo.tags}`.toLowerCase().includes(q);
+      return matchesQuery(todo);
     });
-  }, [todos, query, filter]);
+  }, [todos, filter, matchesQuery]);
+
+  const filteredDeletedTodos = useMemo(() => deletedTodos.filter(matchesQuery), [deletedTodos, matchesQuery]);
+  const isTrashView = filter === 'trash';
 
   async function createTodo(event: React.FormEvent) {
     event.preventDefault();
@@ -440,26 +456,30 @@ function App() {
     }
   }, []);
 
+  const restoreTodo = useCallback(async (id: string) => {
+    try {
+      const restored = await call<Todo>('restore_todo', { id });
+      await refresh();
+      setSelectedTodoId(restored.id);
+      setFilter('all');
+      setStatus('Task restored');
+      dismissToast();
+    } catch (err) {
+      setStatus(`Restore failed: ${String(err)}`);
+    }
+  }, [dismissToast, refresh]);
+
   const deleteTodo = useCallback(async (id: string) => {
     try {
       await call('delete_todo', { id });
-      setTodos((prev) => prev.filter((todo) => todo.id !== id));
       if (selectedTodoId === id) setSelectedTodoId(null);
+      await refresh();
       setStatus('Task moved to trash');
-      showToast('Task deleted', async () => {
-        try {
-          const restored = await call<Todo>('restore_todo', { id });
-          setTodos((prev) => (prev.some((t) => t.id === restored.id) ? prev.map((t) => (t.id === restored.id ? restored : t)) : [restored, ...prev]));
-          dismissToast();
-          setStatus('Task restored');
-        } catch (err) {
-          setStatus(`Restore failed: ${String(err)}`);
-        }
-      });
+      showToast('Task moved to trash', () => { void restoreTodo(id); });
     } catch (err) {
       setStatus(`Delete failed: ${String(err)}`);
     }
-  }, [dismissToast, selectedTodoId, showToast]);
+  }, [refresh, restoreTodo, selectedTodoId, showToast]);
 
   async function placeExistingTodo(todo: Todo) {
     const already = items.some((item) => item.item_type === 'todo' && item.ref_id === todo.id);
@@ -724,8 +744,8 @@ function App() {
         <div className="toolbar">
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search tasks" />
           <div className="segmented">
-            {(['all', 'active', 'done'] as const).map((name) => (
-              <button className={filter === name ? 'active' : ''} onClick={() => setFilter(name)} key={name}>
+            {(['all', 'active', 'done', 'trash'] as const).map((name) => (
+              <button className={filter === name ? 'active' : ''} onClick={() => { setFilter(name); if (name === 'trash') setMode('list'); }} key={name}>
                 {name}
               </button>
             ))}
@@ -733,7 +753,25 @@ function App() {
         </div>
 
         <div className="task-list">
-          {filteredTodos.length === 0 ? (
+          {isTrashView ? (
+            filteredDeletedTodos.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">♻</div>
+                <h3>{deletedTodos.length === 0 ? 'Trash is empty' : 'No deleted tasks match'}</h3>
+                <p>{deletedTodos.length === 0 ? 'Deleted tasks will appear here so you can restore them later.' : 'Try clearing your search to see more deleted tasks.'}</p>
+              </div>
+            ) : filteredDeletedTodos.map((todo) => (
+              <article className={`task-row trash-row prio-${todo.priority}`} key={todo.id}>
+                <div className="trash-glyph" aria-hidden="true">↺</div>
+                <div className="task-row-body">
+                  <strong>{todo.title}</strong>
+                  <span>{todo.description || 'No description'}</span>
+                  <small><b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>{todo.deleted_at ? ` · deleted ${new Date(todo.deleted_at).toLocaleString()}` : ''}</small>
+                </div>
+                <button className="ghost" onClick={() => restoreTodo(todo.id)}>Restore</button>
+              </article>
+            ))
+          ) : filteredTodos.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">✦</div>
               <h3>{todos.length === 0 ? 'No tasks yet' : 'Nothing matches'}</h3>
@@ -758,7 +796,7 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <h2>{mode === 'canvas' ? 'Canvas Board' : 'List Mode'}</h2>
+            <h2>{isTrashView ? 'Trash' : mode === 'canvas' ? 'Canvas Board' : 'List Mode'}</h2>
             <p className="status">
               <span className={`status-dot ${/fail|error/i.test(status) ? 'error' : ''}`} aria-hidden="true" />
               {status}
@@ -825,7 +863,30 @@ function App() {
           </div>
         ) : (
           <div className="list-mode">
-            {filteredTodos.map((todo) => (
+            {isTrashView ? (
+              filteredDeletedTodos.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">♻</div>
+                  <h3>Trash is empty</h3>
+                  <p>Soft-deleted tasks are held here until you restore them.</p>
+                </div>
+              ) : filteredDeletedTodos.map((todo) => (
+                <article className="detail-card trash-detail" key={todo.id}>
+                  <div>
+                    <b>{todo.title}</b>
+                    <p>{todo.description || 'No description'}</p>
+                    <small><b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>{todo.deleted_at ? ` · deleted ${new Date(todo.deleted_at).toLocaleString()}` : ''}</small>
+                  </div>
+                  <button className="primary" onClick={() => restoreTodo(todo.id)}>Restore task</button>
+                </article>
+              ))
+            ) : filteredTodos.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">✦</div>
+                <h3>{todos.length === 0 ? 'No tasks yet' : 'Nothing matches'}</h3>
+                <p>{todos.length === 0 ? 'Add your first task in the sidebar.' : 'Try clearing your search or switching filters.'}</p>
+              </div>
+            ) : filteredTodos.map((todo) => (
               <article className="detail-card" key={todo.id}>
                 <EditableInput value={todo.title} onCommit={(v) => updateTodoField(todo.id, { title: v })} />
                 <EditableTextarea value={todo.description} onCommit={(v) => updateTodoField(todo.id, { description: v })} />
