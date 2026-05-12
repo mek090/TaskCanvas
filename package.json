@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
     "test": "cd src-tauri && cargo test --lib",
+    "test:frontend": "vitest run",
     "lint:rust": "cd src-tauri && cargo clippy --all-targets -- -D warnings",
     "fmt:rust:check": "cd src-tauri && cargo fmt --check",
     "preview": "vite preview --host 127.0.0.1",
@@ -23,11 +24,17 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^25.7.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.4",
     "cross-env": "^7.0.3",
+    "jsdom": "^29.1.1",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^4.1.6"
   }
 }

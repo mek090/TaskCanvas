@@ -10,8 +10,9 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
+    "types": ["vitest/globals", "node"],
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx"

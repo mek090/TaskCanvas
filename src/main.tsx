@@ -372,7 +372,7 @@ function ConfirmDialog({ request, onResolve }: ConfirmDialogProps) {
   );
 }
 
-function App() {
+export function App() {
   const [mode, setMode] = useState<Mode>('canvas');
   const [todos, setTodos] = useState<Todo[]>([]);
   const [deletedTodos, setDeletedTodos] = useState<Todo[]>([]);
@@ -1106,4 +1106,5 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
   return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable;
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+const root = document.getElementById('root');
+if (root) createRoot(root).render(<App />);
