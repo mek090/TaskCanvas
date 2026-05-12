@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default permissions for TaskCanvas","local":true,"windows":["main"],"permissions":["core:default","opener:default","dialog:allow-save","dialog:allow-open"]}}

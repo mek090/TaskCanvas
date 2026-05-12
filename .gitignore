@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# frontend build
+dist/
+
+# Tauri/Rust build
+src-tauri/target/
+
+# local env
+.env
+.env.*
+
+# local agent/editor state
+.claude/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
