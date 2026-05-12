@@ -58,6 +58,23 @@ struct Attachment {
     sync_status: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct PurgeResult {
+    todos: usize,
+    board_items: usize,
+    attachments: usize,
+    image_files: usize,
+}
+
+impl PurgeResult {
+    fn add(&mut self, other: PurgeResult) {
+        self.todos += other.todos;
+        self.board_items += other.board_items;
+        self.attachments += other.attachments;
+        self.image_files += other.image_files;
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct CreateTodoInput {
     title: String,
@@ -442,6 +459,142 @@ fn restore_todo(app: AppHandle, id: String) -> Result<Todo, String> {
         return Err("Todo not found or not deleted".into());
     }
     read_todo(&c, &id)
+}
+
+fn remove_local_attachment_files(paths: &[String], images_dir: &Path) -> usize {
+    paths
+        .iter()
+        .filter(|path| {
+            let candidate = Path::new(path);
+            if !candidate.starts_with(images_dir) || !candidate.exists() {
+                return false;
+            }
+            fs::remove_file(candidate).is_ok()
+        })
+        .count()
+}
+
+fn purge_todo_inner(
+    c: &mut Connection,
+    images_dir: &Path,
+    id: &str,
+) -> Result<PurgeResult, String> {
+    let exists: i64 = c
+        .query_row(
+            "SELECT COUNT(*) FROM todos WHERE id=?1 AND deleted_at IS NOT NULL",
+            params![id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if exists == 0 {
+        return Err("Todo not found in trash".into());
+    }
+
+    let attachment_paths = {
+        let mut stmt = c
+            .prepare("SELECT local_path FROM attachments WHERE todo_id=?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![id], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+    };
+
+    let tx = c.transaction().map_err(|e| e.to_string())?;
+    let board_items = tx
+        .execute(
+            "DELETE FROM board_items WHERE item_type='todo' AND ref_id=?1",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
+    let attachments = tx
+        .execute("DELETE FROM attachments WHERE todo_id=?1", params![id])
+        .map_err(|e| e.to_string())?;
+    let todos = tx
+        .execute(
+            "DELETE FROM todos WHERE id=?1 AND deleted_at IS NOT NULL",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(PurgeResult {
+        todos,
+        board_items,
+        attachments,
+        image_files: remove_local_attachment_files(&attachment_paths, images_dir),
+    })
+}
+
+fn purge_orphan_attachments_inner(
+    c: &mut Connection,
+    images_dir: &Path,
+) -> Result<PurgeResult, String> {
+    let attachment_paths = {
+        let mut stmt = c
+            .prepare(
+                "SELECT local_path FROM attachments
+                 WHERE todo_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM todos WHERE todos.id = attachments.todo_id)",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+    };
+    let tx = c.transaction().map_err(|e| e.to_string())?;
+    let attachments = tx
+        .execute(
+            "DELETE FROM attachments
+             WHERE todo_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM todos WHERE todos.id = attachments.todo_id)",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(PurgeResult {
+        attachments,
+        image_files: remove_local_attachment_files(&attachment_paths, images_dir),
+        ..Default::default()
+    })
+}
+
+fn purge_deleted_todos_inner(c: &mut Connection, images_dir: &Path) -> Result<PurgeResult, String> {
+    let ids = {
+        let mut stmt = c
+            .prepare("SELECT id FROM todos WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+    };
+
+    let mut total = PurgeResult::default();
+    for id in ids {
+        total.add(purge_todo_inner(c, images_dir, &id)?);
+    }
+    total.add(purge_orphan_attachments_inner(c, images_dir)?);
+    Ok(total)
+}
+
+#[tauri::command]
+fn purge_todo(app: AppHandle, id: String) -> Result<PurgeResult, String> {
+    init_db_inner(&app)?;
+    let images_dir = app_dir(&app)?.join("images");
+    let mut c = conn(&app)?;
+    purge_todo_inner(&mut c, &images_dir, &id)
+}
+
+#[tauri::command]
+fn purge_deleted_todos(app: AppHandle) -> Result<PurgeResult, String> {
+    init_db_inner(&app)?;
+    let images_dir = app_dir(&app)?.join("images");
+    let mut c = conn(&app)?;
+    purge_deleted_todos_inner(&mut c, &images_dir)
 }
 
 #[tauri::command]
@@ -1088,6 +1241,8 @@ pub fn run() {
             toggle_todo,
             delete_todo,
             restore_todo,
+            purge_todo,
+            purge_deleted_todos,
             list_board_items,
             upsert_board_item,
             delete_board_item,
@@ -1590,6 +1745,81 @@ mod tests {
             )
             .unwrap();
         assert!(std::path::Path::new(&stored_path).starts_with(&images));
+    }
+
+    #[test]
+    fn purge_todo_inner_hard_deletes_deleted_todo_and_linked_local_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("src.sqlite3");
+        let images = dir.path().join("images");
+        fs::create_dir_all(&images).unwrap();
+        let image_path = images.join("purge-me.png");
+        fs::write(&image_path, b"image").unwrap();
+
+        let mut c = Connection::open(&db).unwrap();
+        run_migrations(&mut c).unwrap();
+        c.execute(
+            "INSERT INTO todos (id,title,created_at,updated_at,deleted_at) VALUES ('trash-1','gone','t','t','t')",
+            [],
+        ).unwrap();
+        c.execute(
+            "INSERT INTO board_items (id,board_id,item_type,ref_id,x,y,width,height,z_index,created_at,updated_at,sync_status)
+             VALUES ('board-trash','main','todo','trash-1',0,0,10,10,1,'t','t','pending_delete')",
+            [],
+        ).unwrap();
+        c.execute(
+            "INSERT INTO attachments (id,todo_id,board_id,file_name,mime_type,local_path,size_bytes,created_at,updated_at,sync_status)
+             VALUES ('att-trash','trash-1','main','purge-me.png','image/png',?1,5,'t','t','pending_delete')",
+            params![image_path.to_string_lossy().to_string()],
+        ).unwrap();
+
+        let purged = purge_todo_inner(&mut c, &images, "trash-1").unwrap();
+        assert_eq!(purged.todos, 1);
+        assert_eq!(purged.board_items, 1);
+        assert_eq!(purged.attachments, 1);
+        assert_eq!(purged.image_files, 1);
+        assert!(
+            !image_path.exists(),
+            "linked attachment file should be removed"
+        );
+
+        for (table, expected) in [("todos", 0), ("board_items", 0), ("attachments", 0)] {
+            let sql = format!("SELECT COUNT(*) FROM {}", table);
+            let count: i64 = c.query_row(&sql, [], |r| r.get(0)).unwrap();
+            assert_eq!(count, expected, "{} should be cleaned", table);
+        }
+    }
+
+    #[test]
+    fn purge_deleted_todos_inner_cleans_orphan_attachments() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("src.sqlite3");
+        let images = dir.path().join("images");
+        fs::create_dir_all(&images).unwrap();
+        let orphan_path = images.join("orphan.png");
+        fs::write(&orphan_path, b"orphan").unwrap();
+
+        let mut c = Connection::open(&db).unwrap();
+        run_migrations(&mut c).unwrap();
+        c.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        c.execute(
+            "INSERT INTO attachments (id,todo_id,board_id,file_name,mime_type,local_path,size_bytes,created_at,updated_at,sync_status)
+             VALUES ('att-orphan','missing-todo','main','orphan.png','image/png',?1,6,'t','t','pending_delete')",
+            params![orphan_path.to_string_lossy().to_string()],
+        ).unwrap();
+
+        let purged = purge_deleted_todos_inner(&mut c, &images).unwrap();
+        assert_eq!(purged.todos, 0);
+        assert_eq!(purged.attachments, 1);
+        assert_eq!(purged.image_files, 1);
+        assert!(
+            !orphan_path.exists(),
+            "orphan attachment file should be removed"
+        );
+        let count: i64 = c
+            .query_row("SELECT COUNT(*) FROM attachments", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]

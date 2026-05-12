@@ -47,6 +47,13 @@ type Attachment = {
   sync_status: string;
 };
 
+type PurgeResult = {
+  todos: number;
+  board_items: number;
+  attachments: number;
+  image_files: number;
+};
+
 type DragState = {
   item: BoardItem;
   mode: 'move' | 'resize';
@@ -165,6 +172,44 @@ async function webInvoke<T>(command: string, args: Record<string, unknown>): Pro
       });
       if (!restored) throw new Error('Todo not found or not deleted');
       writeWebDb(db); return restored as T;
+    }
+    case 'purge_todo': {
+      const id = String(args.id);
+      const existed = db.todos.some((todo) => todo.id === id && todo.deleted_at);
+      if (!existed) throw new Error('Todo not found in trash');
+      const attachmentIds = new Set(db.attachments.filter((attachment) => attachment.todo_id === id).map((attachment) => attachment.id));
+      const result: PurgeResult = {
+        todos: 1,
+        board_items: db.boardItems.filter((item) => item.item_type === 'todo' && item.ref_id === id).length,
+        attachments: attachmentIds.size,
+        image_files: attachmentIds.size,
+      };
+      db.todos = db.todos.filter((todo) => todo.id !== id);
+      db.boardItems = db.boardItems.filter((item) => !(item.item_type === 'todo' && item.ref_id === id));
+      db.attachments = db.attachments.filter((attachment) => !attachmentIds.has(attachment.id));
+      for (const attachmentId of attachmentIds) delete db.imageUrls[attachmentId];
+      writeWebDb(db); return result as T;
+    }
+    case 'purge_deleted_todos': {
+      const deletedIds = new Set(db.todos.filter((todo) => todo.deleted_at).map((todo) => todo.id));
+      const orphanAttachmentIds = new Set(db.attachments
+        .filter((attachment) => attachment.todo_id && !db.todos.some((todo) => todo.id === attachment.todo_id))
+        .map((attachment) => attachment.id));
+      const linkedAttachmentIds = new Set(db.attachments
+        .filter((attachment) => attachment.todo_id && deletedIds.has(attachment.todo_id))
+        .map((attachment) => attachment.id));
+      const allAttachmentIds = new Set([...linkedAttachmentIds, ...orphanAttachmentIds]);
+      const result: PurgeResult = {
+        todos: deletedIds.size,
+        board_items: db.boardItems.filter((item) => item.item_type === 'todo' && deletedIds.has(item.ref_id)).length,
+        attachments: allAttachmentIds.size,
+        image_files: allAttachmentIds.size,
+      };
+      db.todos = db.todos.filter((todo) => !deletedIds.has(todo.id));
+      db.boardItems = db.boardItems.filter((item) => !(item.item_type === 'todo' && deletedIds.has(item.ref_id)));
+      db.attachments = db.attachments.filter((attachment) => !allAttachmentIds.has(attachment.id));
+      for (const attachmentId of allAttachmentIds) delete db.imageUrls[attachmentId];
+      writeWebDb(db); return result as T;
     }
     case 'upsert_board_item': {
       const input = args.input as Partial<BoardItem>;
@@ -481,6 +526,40 @@ function App() {
     }
   }, [refresh, restoreTodo, selectedTodoId, showToast]);
 
+  const purgeTodo = useCallback(async (id: string, title: string) => {
+    const ok = await requestConfirm({
+      title: 'Permanently delete task?',
+      message: `This will remove “${title}” from Trash, delete its canvas cards, and clean linked local attachments. This cannot be undone.`,
+      confirmLabel: 'Delete forever',
+    });
+    if (!ok) return;
+    try {
+      const result = await call<PurgeResult>('purge_todo', { id });
+      await refresh();
+      setStatus(`Purged ${result.todos} task, ${result.attachments} attachment(s), ${result.image_files} file(s)`);
+    } catch (err) {
+      setStatus(`Purge failed: ${String(err)}`);
+    }
+  }, [refresh, requestConfirm]);
+
+  const emptyTrash = useCallback(async () => {
+    if (deletedTodos.length === 0) return setStatus('Trash is already empty');
+    const ok = await requestConfirm({
+      title: 'Empty trash?',
+      message: `This will permanently delete ${deletedTodos.length} task(s), remove their canvas cards, and clean orphan attachments. This cannot be undone.`,
+      confirmLabel: 'Empty trash',
+    });
+    if (!ok) return;
+    try {
+      const result = await call<PurgeResult>('purge_deleted_todos');
+      await refresh();
+      setSelectedTodoId(null);
+      setStatus(`Emptied trash: ${result.todos} task(s), ${result.attachments} attachment(s), ${result.image_files} file(s)`);
+    } catch (err) {
+      setStatus(`Empty trash failed: ${String(err)}`);
+    }
+  }, [deletedTodos.length, refresh, requestConfirm]);
+
   async function placeExistingTodo(todo: Todo) {
     const already = items.some((item) => item.item_type === 'todo' && item.ref_id === todo.id);
     if (already) return setStatus('Task is already on canvas');
@@ -768,7 +847,10 @@ function App() {
                   <span>{todo.description || 'No description'}</span>
                   <small><b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>{todo.deleted_at ? ` · deleted ${new Date(todo.deleted_at).toLocaleString()}` : ''}</small>
                 </div>
-                <button className="ghost" onClick={() => restoreTodo(todo.id)}>Restore</button>
+                <div className="trash-actions">
+                  <button className="ghost" onClick={() => restoreTodo(todo.id)}>Restore</button>
+                  <button className="danger ghost" onClick={() => purgeTodo(todo.id, todo.title)}>Purge</button>
+                </div>
               </article>
             ))
           ) : filteredTodos.length === 0 ? (
@@ -806,6 +888,7 @@ function App() {
             <button className={mode === 'canvas' ? 'active' : ''} onClick={() => setMode('canvas')}>Canvas</button>
             <button className={mode === 'list' ? 'active' : ''} onClick={() => setMode('list')}>List</button>
             <span className="divider" aria-hidden="true" />
+            {isTrashView && <button className="danger" onClick={emptyTrash}>Empty trash</button>}
             <button onClick={exportBackup}>Export</button>
             <button onClick={importBackup}>Import</button>
           </div>
@@ -877,7 +960,10 @@ function App() {
                     <p>{todo.description || 'No description'}</p>
                     <small><b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>{todo.deleted_at ? ` · deleted ${new Date(todo.deleted_at).toLocaleString()}` : ''}</small>
                   </div>
-                  <button className="primary" onClick={() => restoreTodo(todo.id)}>Restore task</button>
+                  <div className="trash-actions">
+                    <button className="primary" onClick={() => restoreTodo(todo.id)}>Restore task</button>
+                    <button className="danger" onClick={() => purgeTodo(todo.id, todo.title)}>Delete forever</button>
+                  </div>
                 </article>
               ))
             ) : filteredTodos.length === 0 ? (

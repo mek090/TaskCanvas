@@ -205,6 +205,16 @@ h1, h2, h3, p { margin: 0; }
   opacity: 0.9;
 }
 .task-row.trash-row:hover { opacity: 1; }
+.trash-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.trash-actions .danger.ghost {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+.trash-actions .danger.ghost:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: var(--danger);
+  color: white;
+}
 .trash-glyph {
   width: 26px;
   height: 26px;
