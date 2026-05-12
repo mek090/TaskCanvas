@@ -297,14 +297,13 @@ fn init_db(app: AppHandle) -> Result<(), String> {
     init_db_inner(&app)
 }
 
-#[tauri::command]
-fn list_todos(app: AppHandle) -> Result<Vec<Todo>, String> {
-    init_db_inner(&app)?;
-    let c = conn(&app)?;
+fn list_todos_from_conn(c: &Connection) -> Result<Vec<Todo>, String> {
     let mut stmt = c
         .prepare(
             "SELECT id,title,description,completed,priority,due_date,tags,created_at,updated_at,deleted_at,sync_status,version
-             FROM todos WHERE deleted_at IS NULL ORDER BY completed ASC, updated_at DESC",
+             FROM todos
+             WHERE deleted_at IS NULL
+             ORDER BY completed ASC, due_date IS NULL ASC, due_date ASC, updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
@@ -327,6 +326,13 @@ fn list_todos(app: AppHandle) -> Result<Vec<Todo>, String> {
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_todos(app: AppHandle) -> Result<Vec<Todo>, String> {
+    init_db_inner(&app)?;
+    let c = conn(&app)?;
+    list_todos_from_conn(&c)
 }
 
 #[tauri::command]
@@ -1390,6 +1396,36 @@ mod tests {
             })
             .unwrap();
         assert_eq!(title, "hello");
+    }
+
+    #[test]
+    fn list_todos_from_conn_orders_active_by_due_date_before_undated_then_done() {
+        let mut c = Connection::open_in_memory().unwrap();
+        run_migrations(&mut c).unwrap();
+        c.execute(
+            "INSERT INTO todos (id,title,completed,due_date,created_at,updated_at) VALUES ('later','later',0,'2026-05-20','t','2026-01-03')",
+            [],
+        ).unwrap();
+        c.execute(
+            "INSERT INTO todos (id,title,completed,due_date,created_at,updated_at) VALUES ('done-due','done due',1,'2026-05-01','t','2026-01-04')",
+            [],
+        ).unwrap();
+        c.execute(
+            "INSERT INTO todos (id,title,completed,due_date,created_at,updated_at) VALUES ('none','none',0,NULL,'t','2026-01-02')",
+            [],
+        ).unwrap();
+        c.execute(
+            "INSERT INTO todos (id,title,completed,due_date,created_at,updated_at) VALUES ('soon','soon',0,'2026-05-10','t','2026-01-01')",
+            [],
+        ).unwrap();
+
+        let ids: Vec<String> = list_todos_from_conn(&c)
+            .unwrap()
+            .into_iter()
+            .map(|todo| todo.id)
+            .collect();
+
+        assert_eq!(ids, vec!["soon", "later", "none", "done-due"]);
     }
 
     // --- Backup/restore integration tests ---

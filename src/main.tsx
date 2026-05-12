@@ -6,7 +6,8 @@ import './styles.css';
 
 type Priority = 'low' | 'medium' | 'high';
 type Mode = 'list' | 'canvas';
-type TaskFilter = 'all' | 'active' | 'done' | 'trash';
+type TaskFilter = 'all' | 'active' | 'due' | 'done' | 'trash';
+type SortMode = 'due' | 'updated';
 
 type Todo = {
   id: string;
@@ -75,6 +76,45 @@ const priorityLabel: Record<Priority, string> = {
   high: 'High',
 };
 
+function todayKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeDueDate(value: string | null | undefined) {
+  const trimmed = String(value ?? '').trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isOverdue(todo: Todo) {
+  return Boolean(todo.due_date && !todo.completed && todo.due_date < todayKey());
+}
+
+function dueLabel(todo: Todo) {
+  if (!todo.due_date) return 'No due date';
+  if (todo.due_date === todayKey()) return 'Due today';
+  if (isOverdue(todo)) return `Overdue · ${todo.due_date}`;
+  return `Due ${todo.due_date}`;
+}
+
+function compareTodosByDue(a: Todo, b: Todo) {
+  const completedDelta = Number(a.completed) - Number(b.completed);
+  if (completedDelta !== 0) return completedDelta;
+  if (a.due_date && b.due_date && a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
+  if (a.due_date && !b.due_date) return -1;
+  if (!a.due_date && b.due_date) return 1;
+  return b.updated_at.localeCompare(a.updated_at);
+}
+
+function compareTodosByUpdated(a: Todo, b: Todo) {
+  const completedDelta = Number(a.completed) - Number(b.completed);
+  if (completedDelta !== 0) return completedDelta;
+  return b.updated_at.localeCompare(a.updated_at);
+}
+
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const UNDO_TIMEOUT_MS = 7000;
@@ -111,7 +151,7 @@ async function webInvoke<T>(command: string, args: Record<string, unknown>): Pro
     case 'init_db':
       return undefined as T;
     case 'list_todos':
-      return db.todos.filter((todo) => !todo.deleted_at).sort((a, b) => Number(a.completed) - Number(b.completed)) as T;
+      return db.todos.filter((todo) => !todo.deleted_at).sort(compareTodosByDue) as T;
     case 'list_deleted_todos':
       return db.todos
         .filter((todo) => todo.deleted_at)
@@ -124,7 +164,7 @@ async function webInvoke<T>(command: string, args: Record<string, unknown>): Pro
       const input = args.input as Partial<Todo>;
       const todo: Todo = {
         id: uuid(), title: String(input.title ?? '').trim(), description: String(input.description ?? ''),
-        completed: false, priority: (input.priority as Priority) ?? 'medium', due_date: null, tags: String(input.tags ?? ''),
+        completed: false, priority: (input.priority as Priority) ?? 'medium', due_date: normalizeDueDate(input.due_date), tags: String(input.tags ?? ''),
         created_at: now, updated_at: now, deleted_at: null, sync_status: 'web_demo', version: 1,
       };
       db.todos.unshift(todo); writeWebDb(db); return todo as T;
@@ -341,7 +381,8 @@ function App() {
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<TaskFilter>('all');
-  const [draft, setDraft] = useState({ title: '', description: '', priority: 'medium' as Priority, tags: '' });
+  const [sortMode, setSortMode] = useState<SortMode>('due');
+  const [draft, setDraft] = useState({ title: '', description: '', priority: 'medium' as Priority, due_date: '', tags: '' });
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null);
   const [status, setStatus] = useState('Ready');
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -433,13 +474,16 @@ function App() {
   }, [query]);
 
   const filteredTodos = useMemo(() => {
-    return todos.filter((todo) => {
-      if (filter === 'trash') return false;
-      if (filter === 'active' && todo.completed) return false;
-      if (filter === 'done' && !todo.completed) return false;
-      return matchesQuery(todo);
-    });
-  }, [todos, filter, matchesQuery]);
+    return todos
+      .filter((todo) => {
+        if (filter === 'trash') return false;
+        if (filter === 'active' && todo.completed) return false;
+        if (filter === 'due' && (todo.completed || !todo.due_date)) return false;
+        if (filter === 'done' && !todo.completed) return false;
+        return matchesQuery(todo);
+      })
+      .sort(sortMode === 'due' ? compareTodosByDue : compareTodosByUpdated);
+  }, [todos, filter, matchesQuery, sortMode]);
 
   const filteredDeletedTodos = useMemo(() => deletedTodos.filter(matchesQuery), [deletedTodos, matchesQuery]);
   const isTrashView = filter === 'trash';
@@ -448,7 +492,7 @@ function App() {
     event.preventDefault();
     if (!draft.title.trim()) return;
     try {
-      const todo = await call<Todo>('create_todo', { input: draft });
+      const todo = await call<Todo>('create_todo', { input: { ...draft, due_date: normalizeDueDate(draft.due_date) } });
       await call<BoardItem>('upsert_board_item', {
         input: {
           item_type: 'todo',
@@ -460,7 +504,7 @@ function App() {
           z_index: 3,
         },
       });
-      setDraft({ title: '', description: '', priority: 'medium', tags: '' });
+      setDraft({ title: '', description: '', priority: 'medium', due_date: '', tags: '' });
       setSelectedTodoId(todo.id);
       setStatus('Created task and placed it on canvas');
       await refresh();
@@ -817,18 +861,27 @@ function App() {
             </select>
             <input value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })} placeholder="tags" />
           </div>
+          <label className="compact-label">Due date<input type="date" value={draft.due_date} onChange={(e) => setDraft({ ...draft, due_date: e.target.value })} /></label>
           <button type="submit">+ Add Task</button>
         </form>
 
         <div className="toolbar">
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search tasks" />
           <div className="segmented">
-            {(['all', 'active', 'done', 'trash'] as const).map((name) => (
+            {(['all', 'active', 'due', 'done', 'trash'] as const).map((name) => (
               <button className={filter === name ? 'active' : ''} onClick={() => { setFilter(name); if (name === 'trash') setMode('list'); }} key={name}>
                 {name}
               </button>
             ))}
           </div>
+          {!isTrashView && (
+            <label className="compact-label">Sort
+              <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
+                <option value="due">Due date first</option>
+                <option value="updated">Recently updated</option>
+              </select>
+            </label>
+          )}
         </div>
 
         <div className="task-list">
@@ -867,7 +920,7 @@ function App() {
               <div className="task-row-body">
                 <strong>{todo.title}</strong>
                 <span>{todo.description || 'No description'}</span>
-                <small><b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>{todo.tags ? ` · ${todo.tags}` : ''}</small>
+                <small><b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>{todo.due_date && <b className={`due-pill ${isOverdue(todo) ? 'overdue' : ''}`}>{dueLabel(todo)}</b>}{todo.tags ? ` · ${todo.tags}` : ''}</small>
               </div>
               <button className="ghost" onClick={(e) => { e.stopPropagation(); void placeExistingTodo(todo); }}>Board</button>
             </article>
@@ -925,7 +978,7 @@ function App() {
                     </div>
                     <h3>{todo.title}</h3>
                     <p>{todo.description}</p>
-                    <footer>{todo.tags || 'untagged'}</footer>
+                    <footer>{todo.due_date ? dueLabel(todo) : (todo.tags || 'untagged')}</footer>
                     <span className="resize" onPointerDown={(e) => { e.stopPropagation(); beginDrag(e, item, 'resize'); }} />
                   </div>
                 );
@@ -980,6 +1033,7 @@ function App() {
                   <select value={todo.priority} onChange={(e) => updateTodoField(todo.id, { priority: e.target.value as Priority })}>
                     <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
                   </select>
+                  <input aria-label={`Due date for ${todo.title}`} type="date" value={todo.due_date ?? ''} onChange={(e) => updateTodoField(todo.id, { due_date: normalizeDueDate(e.target.value) })} />
                   <button onClick={() => toggleTodo(todo)}>{todo.completed ? 'Mark active' : 'Complete'}</button>
                   <button className="danger" onClick={() => deleteTodo(todo.id)}>Delete</button>
                 </div>
@@ -996,6 +1050,8 @@ function App() {
             <label>Title<EditableInput value={selectedTodo.title} onCommit={(v) => updateTodoField(selectedTodo.id, { title: v })} /></label>
             <label>Description<EditableTextarea value={selectedTodo.description} onCommit={(v) => updateTodoField(selectedTodo.id, { description: v })} /></label>
             <label>Priority<select value={selectedTodo.priority} onChange={(e) => updateTodoField(selectedTodo.id, { priority: e.target.value as Priority })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+            <label>Due date<input type="date" value={selectedTodo.due_date ?? ''} onChange={(e) => updateTodoField(selectedTodo.id, { due_date: normalizeDueDate(e.target.value) })} /></label>
+            {selectedTodo.due_date && <div className={`due-summary ${isOverdue(selectedTodo) ? 'overdue' : ''}`}>{dueLabel(selectedTodo)}</div>}
             <label>Tags<EditableInput value={selectedTodo.tags} onCommit={(v) => updateTodoField(selectedTodo.id, { tags: v })} /></label>
             <button onClick={() => toggleTodo(selectedTodo)}>{selectedTodo.completed ? 'Reopen task' : 'Mark complete'}</button>
             <button className="danger" onClick={() => deleteTodo(selectedTodo.id)}>Delete task</button>

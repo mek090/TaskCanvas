@@ -127,6 +127,8 @@ h1, h2, h3, p { margin: 0; }
 .brand p, .topbar p, .muted { color: var(--text-dim); font-size: 12.5px; margin-top: 2px; }
 
 .composer, .toolbar, .inspector-form { display: grid; gap: 10px; }
+.compact-label { gap: 5px; }
+.compact-label input, .compact-label select { padding: 9px 11px; font-size: 13px; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; }
 .composer { padding-bottom: 16px; border-bottom: 1px solid var(--border); }
 .composer button[type="submit"] {
@@ -140,7 +142,7 @@ h1, h2, h3, p { margin: 0; }
 .toolbar { margin: 18px 0 12px; }
 .segmented {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 4px;
   border-radius: var(--radius);
@@ -374,6 +376,32 @@ h1, h2, h3, p { margin: 0; }
 .pill.low { background: rgba(20, 184, 166, 0.18); color: var(--prio-low); border: 1px solid rgba(20, 184, 166, 0.3); }
 .pill.medium { background: rgba(139, 92, 246, 0.18); color: var(--accent); border: 1px solid rgba(139, 92, 246, 0.3); }
 .pill.high { background: rgba(239, 68, 68, 0.18); color: var(--prio-high); border: 1px solid rgba(239, 68, 68, 0.3); }
+.due-pill, .due-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(14, 165, 233, 0.28);
+  background: rgba(14, 165, 233, 0.12);
+  color: #7dd3fc;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.due-pill::before, .due-summary::before { content: "⏱"; }
+.due-pill.overdue, .due-summary.overdue {
+  border-color: rgba(239, 68, 68, 0.38);
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+.due-summary {
+  justify-content: center;
+  width: 100%;
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 12px;
+}
 
 .list-mode { padding: 22px; overflow: auto; display: grid; gap: 14px; align-content: start; }
 .detail-card {
