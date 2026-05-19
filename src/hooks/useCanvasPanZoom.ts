@@ -1,19 +1,78 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type {
+  PointerEvent as ReactPointerEvent,
+  RefObject,
+  WheelEvent as ReactWheelEvent,
+} from 'react';
 import { isTextEditingTarget } from '../lib/files';
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 1.1;
+const MIN_FRAME_VISIBLE = 140;
 
 type Vec2 = { x: number; y: number };
+export type WorldBounds = { x: number; y: number; width: number; height: number };
 
-export function useCanvasPanZoom(enabled: boolean) {
-  const [pan, setPan] = useState<Vec2>({ x: 0, y: 0 });
+type Options = {
+  enabled: boolean;
+  viewportRef: RefObject<HTMLDivElement | null>;
+  bounds: WorldBounds;
+};
+
+export function useCanvasPanZoom({ enabled, viewportRef, bounds }: Options) {
+  const [pan, setPanRaw] = useState<Vec2>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [viewport, setViewport] = useState({ width: 1, height: 1 });
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef<{ pan: Vec2; cursor: Vec2 } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const update = () => setViewport({ width: el.clientWidth, height: el.clientHeight });
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewportRef]);
+
+  const clampPan = useCallback(
+    (p: Vec2, z: number): Vec2 => {
+      const vx = viewport.width;
+      const vy = viewport.height;
+      const bx = bounds.x * z;
+      const by = bounds.y * z;
+      const bw = bounds.width * z;
+      const bh = bounds.height * z;
+
+      let minX = MIN_FRAME_VISIBLE - bx - bw;
+      let maxX = vx - MIN_FRAME_VISIBLE - bx;
+      let minY = MIN_FRAME_VISIBLE - by - bh;
+      let maxY = vy - MIN_FRAME_VISIBLE - by;
+      if (minX > maxX) [minX, maxX] = [maxX, minX];
+      if (minY > maxY) [minY, maxY] = [maxY, minY];
+      return {
+        x: clamp(p.x, minX, maxX),
+        y: clamp(p.y, minY, maxY),
+      };
+    },
+    [bounds.height, bounds.width, bounds.x, bounds.y, viewport.height, viewport.width],
+  );
+
+  const setPan = useCallback(
+    (next: Vec2 | ((prev: Vec2) => Vec2)) => {
+      setPanRaw((prev) => clampPan(typeof next === 'function' ? next(prev) : next, zoom));
+    },
+    [clampPan, zoom],
+  );
+
+  // Re-clamp when bounds, zoom, or viewport changes so frame stays in view.
+  useEffect(() => {
+    setPanRaw((prev) => clampPan(prev, zoom));
+  }, [clampPan, zoom]);
 
   useEffect(() => {
     if (!enabled) {
@@ -31,7 +90,7 @@ export function useCanvasPanZoom(enabled: boolean) {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault();
-        setPan({ x: 0, y: 0 });
+        setPanRaw({ x: 0, y: 0 });
         setZoom(1);
       }
     }
@@ -79,7 +138,7 @@ export function useCanvasPanZoom(enabled: boolean) {
         y: start.pan.y + (e.clientY - start.cursor.y),
       });
     },
-    [isPanning],
+    [isPanning, setPan],
   );
 
   const onPointerUp = useCallback(() => {
@@ -99,21 +158,24 @@ export function useCanvasPanZoom(enabled: boolean) {
         const nextZoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
         if (nextZoom === zoom) return;
         const ratio = nextZoom / zoom;
+        const nextPan = clampPan(
+          {
+            x: cx - (cx - pan.x) * ratio,
+            y: cy - (cy - pan.y) * ratio,
+          },
+          nextZoom,
+        );
         setZoom(nextZoom);
-        setPan({
-          x: cx - (cx - pan.x) * ratio,
-          y: cy - (cy - pan.y) * ratio,
-        });
+        setPanRaw(nextPan);
         return;
       }
-      // Scroll wheel without Ctrl pans the canvas
       e.preventDefault();
       setPan((prev) => ({
         x: prev.x - e.deltaX,
         y: prev.y - e.deltaY,
       }));
     },
-    [pan, zoom],
+    [clampPan, pan, setPan, zoom],
   );
 
   const screenToWorld = useCallback(
@@ -125,9 +187,9 @@ export function useCanvasPanZoom(enabled: boolean) {
   );
 
   const reset = useCallback(() => {
-    setPan({ x: 0, y: 0 });
     setZoom(1);
-  }, []);
+    setPanRaw(clampPan({ x: 0, y: 0 }, 1));
+  }, [clampPan]);
 
   return {
     pan,

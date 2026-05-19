@@ -25,7 +25,28 @@ import type {
 } from './lib/types';
 import { useToast } from './hooks/useToast';
 import { useConfirm } from './hooks/useConfirm';
-import { useCanvasPanZoom } from './hooks/useCanvasPanZoom';
+import { useCanvasPanZoom, type WorldBounds } from './hooks/useCanvasPanZoom';
+
+const WORKSPACE_MIN_WIDTH = 1600;
+const WORKSPACE_MIN_HEIGHT = 1000;
+const WORKSPACE_PADDING = 240;
+
+function computeWorldBounds(items: BoardItem[]): WorldBounds {
+  if (items.length === 0) {
+    return { x: 0, y: 0, width: WORKSPACE_MIN_WIDTH, height: WORKSPACE_MIN_HEIGHT };
+  }
+  let minX = 0;
+  let minY = 0;
+  let maxX = WORKSPACE_MIN_WIDTH;
+  let maxY = WORKSPACE_MIN_HEIGHT;
+  for (const item of items) {
+    minX = Math.min(minX, item.x - WORKSPACE_PADDING);
+    minY = Math.min(minY, item.y - WORKSPACE_PADDING);
+    maxX = Math.max(maxX, item.x + item.width + WORKSPACE_PADDING);
+    maxY = Math.max(maxY, item.y + item.height + WORKSPACE_PADDING);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { CanvasView } from './components/CanvasView';
@@ -60,11 +81,17 @@ export function App() {
 
   const { toast, showToast, dismissToast } = useToast();
   const { confirmRequest, requestConfirm, handleConfirm } = useConfirm();
-  const panZoom = useCanvasPanZoom(mode === 'canvas');
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const latestDraggedItem = useRef<BoardItem | null>(null);
   const todosRef = useRef<Todo[]>([]);
+
+  const worldBounds = useMemo(() => computeWorldBounds(items), [items]);
+  const panZoom = useCanvasPanZoom({
+    enabled: mode === 'canvas',
+    viewportRef: canvasRef,
+    bounds: worldBounds,
+  });
 
   useEffect(() => {
     todosRef.current = todos;
@@ -641,6 +668,7 @@ export function App() {
             canvasClass={panZoom.canvasClass}
             panBindings={panZoom.bindings}
             onReset={panZoom.reset}
+            worldBounds={worldBounds}
           />
         ) : (
           <ListView

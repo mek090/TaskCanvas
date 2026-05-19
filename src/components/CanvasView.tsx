@@ -2,6 +2,7 @@ import type { DragEvent, PointerEvent, RefObject, WheelEvent } from 'react';
 import type { Attachment, BoardItem, Todo } from '../lib/types';
 import { priorityLabel } from '../lib/types';
 import { dueLabel, isOverdue } from '../lib/dates';
+import type { WorldBounds } from '../hooks/useCanvasPanZoom';
 import { EmptyState } from './EmptyState';
 import { CanvasIcon, ClipboardIcon, ClockIcon, CloseIcon } from './Icon';
 
@@ -31,6 +32,7 @@ type Props = {
   canvasClass: string;
   panBindings: Bindings;
   onReset: () => void;
+  worldBounds: WorldBounds;
 };
 
 export function CanvasView({
@@ -52,6 +54,7 @@ export function CanvasView({
   canvasClass,
   panBindings,
   onReset,
+  worldBounds,
 }: Props) {
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     panBindings.onPointerDown(event);
@@ -101,6 +104,20 @@ export function CanvasView({
         data-pan-mode={isSpaceDown ? 'true' : undefined}
         data-panning={isPanning ? 'true' : undefined}
       >
+        <div
+          className="canvas-frame"
+          style={{
+            left: worldBounds.x,
+            top: worldBounds.y,
+            width: worldBounds.width,
+            height: worldBounds.height,
+          }}
+          aria-hidden="true"
+        >
+          <span className="canvas-frame-label">
+            Workspace · {Math.round(worldBounds.width)} × {Math.round(worldBounds.height)}
+          </span>
+        </div>
         {items.map((item) => {
           const style = {
             left: item.x,
