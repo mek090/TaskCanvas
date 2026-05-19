@@ -481,8 +481,8 @@ export function App() {
         drag.mode === 'move'
           ? {
               ...drag.original,
-              x: Math.max(-40, drag.original.x + dx),
-              y: Math.max(-40, drag.original.y + dy),
+              x: drag.original.x + dx,
+              y: drag.original.y + dy,
             }
           : {
               ...drag.original,

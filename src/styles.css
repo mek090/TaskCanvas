@@ -618,14 +618,14 @@ h3 { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
 
 .canvas-frame {
   position: absolute;
-  border: 1px dashed rgba(129, 140, 248, 0.32);
+  border: 1.5px dashed rgba(129, 140, 248, 0.55);
   border-radius: var(--radius-lg);
-  background: rgba(99, 102, 241, 0.03);
+  background: rgba(99, 102, 241, 0.04);
   pointer-events: none;
   z-index: 0;
   box-shadow:
-    0 0 0 1px rgba(8, 11, 20, 0.6),
-    inset 0 0 60px rgba(99, 102, 241, 0.05);
+    inset 0 0 0 1px rgba(8, 11, 20, 0.4),
+    inset 0 0 90px rgba(99, 102, 241, 0.08);
 }
 .canvas-frame-label {
   position: absolute;
