@@ -1,8 +1,9 @@
 import type { DragEvent, PointerEvent, RefObject } from 'react';
 import type { Attachment, BoardItem, Todo } from '../lib/types';
 import { priorityLabel } from '../lib/types';
-import { dueLabel } from '../lib/dates';
+import { dueLabel, isOverdue } from '../lib/dates';
 import { EmptyState } from './EmptyState';
+import { CanvasIcon, ClipboardIcon, ClockIcon, CloseIcon } from './Icon';
 
 type Props = {
   canvasRef: RefObject<HTMLDivElement | null>;
@@ -42,11 +43,12 @@ export function CanvasView({
       onPointerCancel={onPointerUp}
     >
       <div className={`drop-hint ${items.length > 0 ? 'dim' : ''}`}>
-        Paste with Ctrl+V or drop image files · drag to arrange · resize from bottom-right
+        <ClipboardIcon />
+        Paste Ctrl+V or drop images · drag to arrange
       </div>
       {items.length === 0 && (
-        <EmptyState icon="◇" title="Your canvas is empty">
-          Click <b>Board</b> on any task in the sidebar to place it here, or paste/drop an image.
+        <EmptyState icon={CanvasIcon} title="Your canvas is empty">
+          Click <b>Board</b> on any sidebar task to pin it here, or paste/drop an image.
         </EmptyState>
       )}
       {items.map((item) => {
@@ -71,14 +73,28 @@ export function CanvasView({
               }}
             >
               <div className="card-head">
-                <b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>
-                <button onPointerDown={(e) => e.stopPropagation()} onClick={() => onDeleteItem(item.id)}>
-                  ×
+                <span className="priority-dot">{priorityLabel[todo.priority]}</span>
+                <button
+                  className="card-close"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => onDeleteItem(item.id)}
+                  aria-label="Remove from canvas"
+                >
+                  <CloseIcon />
                 </button>
               </div>
               <h3>{todo.title}</h3>
               <p>{todo.description}</p>
-              <footer>{todo.due_date ? dueLabel(todo) : todo.tags || 'untagged'}</footer>
+              <footer>
+                {todo.due_date && (
+                  <b className={`due-pill ${isOverdue(todo) ? 'overdue' : ''}`}>
+                    <ClockIcon />
+                    {dueLabel(todo)}
+                  </b>
+                )}
+                {todo.tags && <span className="chip">{todo.tags}</span>}
+                {!todo.due_date && !todo.tags && <span>No due date · untagged</span>}
+              </footer>
               <span
                 className="resize"
                 onPointerDown={(e) => {
@@ -101,12 +117,17 @@ export function CanvasView({
             {imageUrls[attachment.id] ? (
               <img src={imageUrls[attachment.id]} alt={attachment.file_name} draggable={false} />
             ) : (
-              <div className="image-loading">Loading image...</div>
+              <div className="image-loading">Loading image…</div>
             )}
             <div className="image-caption">
               <span>{attachment.file_name}</span>
-              <button onPointerDown={(e) => e.stopPropagation()} onClick={() => onDeleteItem(item.id)}>
-                ×
+              <button
+                className="card-close"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => onDeleteItem(item.id)}
+                aria-label="Remove image"
+              >
+                <CloseIcon />
               </button>
             </div>
             <span

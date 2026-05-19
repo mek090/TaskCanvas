@@ -1,9 +1,14 @@
-import type { Priority, Todo } from '../lib/types';
+import type { Todo } from '../lib/types';
 import { priorityLabel } from '../lib/types';
-import { normalizeDueDate } from '../lib/dates';
-import { EditableInput } from './EditableInput';
-import { EditableTextarea } from './EditableTextarea';
+import { dueLabel, isOverdue } from '../lib/dates';
 import { EmptyState } from './EmptyState';
+import {
+  CheckIcon,
+  ClockIcon,
+  InboxIcon,
+  RestoreIcon,
+  TrashIcon,
+} from './Icon';
 
 type Props = {
   isTrashView: boolean;
@@ -15,6 +20,7 @@ type Props = {
   onDelete: (id: string) => void;
   onRestore: (id: string) => void;
   onPurge: (id: string, title: string) => void;
+  onSelectTodo: (id: string) => void;
 };
 
 export function ListView({
@@ -22,18 +28,18 @@ export function ListView({
   todos,
   filteredTodos,
   filteredDeletedTodos,
-  onUpdate,
   onToggle,
   onDelete,
   onRestore,
   onPurge,
+  onSelectTodo,
 }: Props) {
   return (
     <div className="list-mode">
       {isTrashView ? (
         filteredDeletedTodos.length === 0 ? (
-          <EmptyState icon="♻" title="Trash is empty">
-            Soft-deleted tasks are held here until you restore them.
+          <EmptyState icon={TrashIcon} title="Trash is empty">
+            Soft-deleted tasks live here until you restore them.
           </EmptyState>
         ) : (
           filteredDeletedTodos.map((todo) => (
@@ -58,37 +64,64 @@ export function ListView({
           ))
         )
       ) : filteredTodos.length === 0 ? (
-        <EmptyState icon="✦" title={todos.length === 0 ? 'No tasks yet' : 'Nothing matches'}>
+        <EmptyState icon={InboxIcon} title={todos.length === 0 ? 'No tasks yet' : 'Nothing matches'}>
           {todos.length === 0
-            ? 'Add your first task in the sidebar.'
-            : 'Try clearing your search or switching filters.'}
+            ? 'Add your first task from the sidebar.'
+            : 'Try clearing the search or switching filters.'}
         </EmptyState>
       ) : (
         filteredTodos.map((todo) => (
-          <article className="detail-card" key={todo.id}>
-            <EditableInput value={todo.title} onCommit={(v) => onUpdate(todo.id, { title: v })} />
-            <EditableTextarea
-              value={todo.description}
-              onCommit={(v) => onUpdate(todo.id, { description: v })}
-            />
-            <div className="row">
-              <select
-                value={todo.priority}
-                onChange={(e) => onUpdate(todo.id, { priority: e.target.value as Priority })}
+          <article
+            className={`list-row prio-${todo.priority} ${todo.completed ? 'completed' : ''}`}
+            key={todo.id}
+            onClick={() => onSelectTodo(todo.id)}
+          >
+            <button
+              className={`check ${todo.completed ? 'done' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle(todo);
+              }}
+              aria-label={todo.completed ? `Reopen ${todo.title}` : `Complete ${todo.title}`}
+            >
+              <CheckIcon />
+            </button>
+            <div className="list-row-body">
+              <span className="list-row-title">{todo.title}</span>
+              {todo.description && <span className="list-row-desc">{todo.description}</span>}
+              <span className="list-row-meta">
+                <b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>
+                {todo.due_date && (
+                  <b className={`due-pill ${isOverdue(todo) ? 'overdue' : ''}`}>
+                    <ClockIcon />
+                    {dueLabel(todo)}
+                  </b>
+                )}
+                {todo.tags && <span className="chip">{todo.tags}</span>}
+              </span>
+            </div>
+            <div className="list-row-actions">
+              <button
+                className="icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggle(todo);
+                }}
+                aria-label={todo.completed ? 'Mark active' : 'Complete'}
+                title={todo.completed ? 'Mark active' : 'Mark complete'}
               >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-              <input
-                aria-label={`Due date for ${todo.title}`}
-                type="date"
-                value={todo.due_date ?? ''}
-                onChange={(e) => onUpdate(todo.id, { due_date: normalizeDueDate(e.target.value) })}
-              />
-              <button onClick={() => onToggle(todo)}>{todo.completed ? 'Mark active' : 'Complete'}</button>
-              <button className="danger" onClick={() => onDelete(todo.id)}>
-                Delete
+                {todo.completed ? <RestoreIcon /> : <CheckIcon />}
+              </button>
+              <button
+                className="icon danger-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(todo.id);
+                }}
+                aria-label="Delete"
+                title="Delete"
+              >
+                <TrashIcon />
               </button>
             </div>
           </article>

@@ -634,6 +634,7 @@ export function App() {
             onDelete={deleteTodo}
             onRestore={restoreTodo}
             onPurge={purgeTodo}
+            onSelectTodo={setSelectedTodoId}
           />
         )}
       </section>

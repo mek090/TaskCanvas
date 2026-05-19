@@ -1,11 +1,11 @@
 export function TipsCard() {
   return (
     <div className="tips-card">
-      <h3>Shortcuts</h3>
+      <h4>Shortcuts</h4>
       <ul>
         <li>
           <span>Paste image</span>
-          <kbd>Ctrl + V</kbd>
+          <kbd>Ctrl V</kbd>
         </li>
         <li>
           <span>Drop image files</span>

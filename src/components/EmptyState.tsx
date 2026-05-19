@@ -1,15 +1,18 @@
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode, SVGProps } from 'react';
+import { SparkleIcon } from './Icon';
 
 type Props = {
-  icon: string;
+  icon?: ComponentType<SVGProps<SVGSVGElement>>;
   title: string;
   children: ReactNode;
 };
 
-export function EmptyState({ icon, title, children }: Props) {
+export function EmptyState({ icon: IconComponent = SparkleIcon, title, children }: Props) {
   return (
     <div className="empty-state">
-      <div className="empty-icon">{icon}</div>
+      <div className="empty-icon">
+        <IconComponent />
+      </div>
       <h3>{title}</h3>
       <p>{children}</p>
     </div>
