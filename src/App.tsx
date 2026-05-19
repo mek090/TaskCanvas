@@ -7,7 +7,12 @@ import {
   compareTodosByUpdated,
   normalizeDueDate,
 } from './lib/dates';
-import { fileToDataUrl, isTextEditingTarget } from './lib/files';
+import {
+  computeImageCardSize,
+  fileToDataUrl,
+  isTextEditingTarget,
+  readImageDimensions,
+} from './lib/files';
 import type {
   Attachment,
   BoardItem,
@@ -313,6 +318,8 @@ export function App() {
   const saveImage = useCallback(
     async (dataUrl: string, fileName?: string, point?: { x: number; y: number }) => {
       try {
+        const natural = await readImageDimensions(dataUrl);
+        const size = computeImageCardSize(natural.width, natural.height);
         await call('save_image_data_url', {
           dataUrl,
           fileName,
@@ -320,6 +327,8 @@ export function App() {
           boardId: 'main',
           x: point?.x ?? 120,
           y: point?.y ?? 120,
+          width: size.width,
+          height: size.height,
         });
         setStatus('Image saved locally and added to canvas');
         await refresh();

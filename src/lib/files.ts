@@ -26,3 +26,28 @@ export function isTextEditingTarget(target: EventTarget | null): boolean {
   const tagName = target.tagName.toLowerCase();
   return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable;
 }
+
+const CARD_MAX_SIDE = 320;
+const CARD_MIN_SIDE = 48;
+
+export function computeImageCardSize(naturalWidth: number, naturalHeight: number) {
+  if (!naturalWidth || !naturalHeight) return { width: 260, height: 180 };
+  const longest = Math.max(naturalWidth, naturalHeight);
+  const scale = CARD_MAX_SIDE / longest;
+  const width = Math.max(CARD_MIN_SIDE, Math.round(naturalWidth * scale));
+  const height = Math.max(CARD_MIN_SIDE, Math.round(naturalHeight * scale));
+  return { width, height };
+}
+
+export function readImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    if (typeof Image === 'undefined') {
+      resolve({ width: 0, height: 0 });
+      return;
+    }
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve({ width: 0, height: 0 });
+    img.src = dataUrl;
+  });
+}

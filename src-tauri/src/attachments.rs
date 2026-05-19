@@ -48,6 +48,7 @@ pub(crate) fn sanitize_file_name(name: &str) -> String {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn save_image_data_url(
     app: AppHandle,
     data_url: String,
@@ -56,6 +57,8 @@ pub(crate) fn save_image_data_url(
     board_id: Option<String>,
     x: Option<f64>,
     y: Option<f64>,
+    width: Option<f64>,
+    height: Option<f64>,
 ) -> Result<Attachment, String> {
     init_db_inner(&app)?;
     let (mime, bytes) = parse_data_url(&data_url)?;
@@ -104,10 +107,12 @@ pub(crate) fn save_image_data_url(
              VALUES (?1,?2,?3,?4,?5,?6,NULL,NULL,?7,?8,?9,?10)",
             params![attachment.id, attachment.todo_id, attachment.board_id, attachment.file_name, attachment.mime_type, attachment.local_path, attachment.size_bytes, attachment.created_at, attachment.updated_at, attachment.sync_status],
         ).map_err(|e| e.to_string())?;
+        let card_w = width.unwrap_or(260.0).clamp(80.0, 800.0);
+        let card_h = height.unwrap_or(180.0).clamp(60.0, 800.0);
         tx.execute(
             "INSERT INTO board_items (id,board_id,item_type,ref_id,x,y,width,height,z_index,created_at,updated_at,sync_status)
-             VALUES (?1,?2,'image',?3,?4,?5,260.0,180.0,2,?6,?6,'pending_create')",
-            params![board_item_id, board, id, x.unwrap_or(80.0), y.unwrap_or(80.0), ts],
+             VALUES (?1,?2,'image',?3,?4,?5,?6,?7,2,?8,?8,'pending_create')",
+            params![board_item_id, board, id, x.unwrap_or(80.0), y.unwrap_or(80.0), card_w, card_h, ts],
         ).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
     })();

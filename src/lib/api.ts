@@ -197,8 +197,8 @@ async function webInvoke<T>(command: string, args: Record<string, unknown>): Pro
         ref_id: id,
         x: Number(args.x ?? 80),
         y: Number(args.y ?? 80),
-        width: 260,
-        height: 180,
+        width: Number(args.width ?? 260),
+        height: Number(args.height ?? 180),
         z_index: 2,
         sync_status: 'web_demo',
       });
