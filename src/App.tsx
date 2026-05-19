@@ -25,6 +25,7 @@ import type {
 } from './lib/types';
 import { useToast } from './hooks/useToast';
 import { useConfirm } from './hooks/useConfirm';
+import { useCanvasPanZoom } from './hooks/useCanvasPanZoom';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { CanvasView } from './components/CanvasView';
@@ -59,6 +60,7 @@ export function App() {
 
   const { toast, showToast, dismissToast } = useToast();
   const { confirmRequest, requestConfirm, handleConfirm } = useConfirm();
+  const panZoom = useCanvasPanZoom(mode === 'canvas');
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const latestDraggedItem = useRef<BoardItem | null>(null);
@@ -353,17 +355,21 @@ export function App() {
         const dataUrl = await fileToDataUrl(file);
         const canvas = canvasRef.current;
         const point = canvas
-          ? {
-              x: canvas.scrollLeft + canvas.clientWidth / 2 - 130,
-              y: canvas.scrollTop + canvas.clientHeight / 2 - 90,
-            }
+          ? panZoom.screenToWorld(
+              canvas.getBoundingClientRect().left + canvas.clientWidth / 2,
+              canvas.getBoundingClientRect().top + canvas.clientHeight / 2,
+              canvas.getBoundingClientRect(),
+            )
           : { x: 150, y: 150 };
-        await saveImage(dataUrl, `pasted-${Date.now()}.png`, point);
+        await saveImage(dataUrl, `pasted-${Date.now()}.png`, {
+          x: point.x - 130,
+          y: point.y - 90,
+        });
       } catch (err) {
         setStatus(`Paste failed: ${String(err)}`);
       }
     },
-    [saveImage],
+    [panZoom, saveImage],
   );
 
   useEffect(() => {
@@ -376,11 +382,8 @@ export function App() {
       event.preventDefault();
       const canvas = canvasRef.current;
       const rect = canvas?.getBoundingClientRect();
-      const point = rect && canvas
-        ? {
-            x: event.clientX - rect.left + canvas.scrollLeft,
-            y: event.clientY - rect.top + canvas.scrollTop,
-          }
+      const point = rect
+        ? panZoom.screenToWorld(event.clientX, event.clientY, rect)
         : { x: 140, y: 140 };
       const imageFiles = Array.from(event.dataTransfer.files).filter((file) =>
         file.type.startsWith('image/'),
@@ -394,7 +397,7 @@ export function App() {
         }
       }
     },
-    [saveImage],
+    [panZoom, saveImage],
   );
 
   const beginDrag = useCallback(
@@ -445,8 +448,8 @@ export function App() {
   const moveDrag = useCallback(
     (event: React.PointerEvent) => {
       if (!drag) return;
-      const dx = event.clientX - drag.startX;
-      const dy = event.clientY - drag.startY;
+      const dx = (event.clientX - drag.startX) / panZoom.zoom;
+      const dy = (event.clientY - drag.startY) / panZoom.zoom;
       const nextDraggedItem =
         drag.mode === 'move'
           ? {
@@ -467,7 +470,7 @@ export function App() {
         }),
       );
     },
-    [drag],
+    [drag, panZoom.zoom],
   );
 
   const deleteCanvasItem = useCallback(
@@ -631,6 +634,13 @@ export function App() {
             onBeginDrag={beginDrag}
             onSelectTodo={setSelectedTodoId}
             onDeleteItem={deleteCanvasItem}
+            transform={panZoom.transform}
+            zoom={panZoom.zoom}
+            isSpaceDown={panZoom.isSpaceDown}
+            isPanning={panZoom.isPanning}
+            canvasClass={panZoom.canvasClass}
+            panBindings={panZoom.bindings}
+            onReset={panZoom.reset}
           />
         ) : (
           <ListView

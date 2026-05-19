@@ -594,13 +594,49 @@ h3 { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
 
 .canvas {
   position: relative;
-  overflow: auto;
+  overflow: hidden;
   min-height: 0;
   background-color: #080b14;
   background-image: radial-gradient(rgba(129, 140, 248, 0.1) 1px, transparent 1px);
   background-size: 28px 28px;
   background-position: -1px -1px;
+  touch-action: none;
+  cursor: default;
 }
+.canvas.space-mode { cursor: grab; }
+.canvas.panning { cursor: grabbing; }
+.canvas.space-mode * { cursor: grab !important; }
+.canvas.panning * { cursor: grabbing !important; }
+.canvas-stage {
+  position: absolute;
+  inset: 0;
+  width: 0; height: 0;
+  pointer-events: auto;
+  will-change: transform;
+}
+.canvas-stage > * { pointer-events: auto; }
+.zoom-badge {
+  position: absolute;
+  bottom: 18px; left: 18px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: rgba(20, 25, 39, 0.86);
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.zoom-badge:hover { color: var(--text); border-color: var(--border-strong); background: rgba(20, 25, 39, 0.95); }
+.zoom-badge.changed { color: var(--accent); border-color: rgba(129, 140, 248, 0.4); }
+.zoom-badge.changed:hover { color: var(--accent); border-color: var(--accent); }
 .drop-hint {
   position: absolute;
   bottom: 18px; right: 18px;
