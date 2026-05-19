@@ -5,6 +5,15 @@ import { dueLabel, isOverdue } from '../lib/dates';
 import { Composer, type ComposerDraft } from './Composer';
 import { SearchToolbar } from './SearchToolbar';
 import { EmptyState } from './EmptyState';
+import {
+  CheckIcon,
+  ClockIcon,
+  InboxIcon,
+  LogoIcon,
+  RestoreIcon,
+  SparkleIcon,
+  TrashIcon,
+} from './Icon';
 
 type Props = {
   draft: ComposerDraft;
@@ -51,13 +60,23 @@ export function Sidebar({
   onRestore,
   onPurge,
 }: Props) {
+  const counts: Partial<Record<TaskFilter, number>> = {
+    all: todos.length,
+    active: todos.filter((t) => !t.completed).length,
+    due: todos.filter((t) => !t.completed && t.due_date).length,
+    done: todos.filter((t) => t.completed).length,
+    trash: deletedCount,
+  };
+
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="logo">TC</div>
-        <div>
+        <div className="logo">
+          <LogoIcon />
+        </div>
+        <div className="brand-text">
           <h1>TaskCanvas</h1>
-          <p>Local-first visual todo</p>
+          <span className="tagline">Local-first</span>
         </div>
       </div>
 
@@ -71,39 +90,51 @@ export function Sidebar({
         sortMode={sortMode}
         onSortChange={onSortChange}
         showSort={!isTrashView}
+        counts={counts}
       />
 
       <div className="task-list">
         {isTrashView ? (
           filteredDeletedTodos.length === 0 ? (
             <EmptyState
-              icon="♻"
+              icon={TrashIcon}
               title={deletedCount === 0 ? 'Trash is empty' : 'No deleted tasks match'}
             >
               {deletedCount === 0
-                ? 'Deleted tasks will appear here so you can restore them later.'
-                : 'Try clearing your search to see more deleted tasks.'}
+                ? 'Deleted tasks will live here so you can restore them later.'
+                : 'Clear your search to see more deleted tasks.'}
             </EmptyState>
           ) : (
             filteredDeletedTodos.map((todo) => (
               <article className={`task-row trash-row prio-${todo.priority}`} key={todo.id}>
                 <div className="trash-glyph" aria-hidden="true">
-                  ↺
+                  <TrashIcon />
                 </div>
                 <div className="task-row-body">
-                  <strong>{todo.title}</strong>
-                  <span>{todo.description || 'No description'}</span>
-                  <small>
+                  <span className="task-title">{todo.title}</span>
+                  <span className="task-meta">
                     <b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>
-                    {todo.deleted_at ? ` · deleted ${new Date(todo.deleted_at).toLocaleString()}` : ''}
-                  </small>
+                    {todo.deleted_at && (
+                      <span className="meta-text">deleted {new Date(todo.deleted_at).toLocaleDateString()}</span>
+                    )}
+                  </span>
                 </div>
                 <div className="trash-actions">
-                  <button className="ghost" onClick={() => onRestore(todo.id)}>
-                    Restore
+                  <button
+                    className="icon restore-btn"
+                    onClick={() => onRestore(todo.id)}
+                    aria-label="Restore"
+                    title="Restore"
+                  >
+                    <RestoreIcon />
                   </button>
-                  <button className="danger ghost" onClick={() => onPurge(todo.id, todo.title)}>
-                    Purge
+                  <button
+                    className="icon purge-btn danger ghost"
+                    onClick={() => onPurge(todo.id, todo.title)}
+                    aria-label="Purge"
+                    title="Delete forever"
+                  >
+                    <TrashIcon />
                   </button>
                 </div>
               </article>
@@ -111,11 +142,11 @@ export function Sidebar({
           )
         ) : filteredTodos.length === 0 ? (
           <EmptyState
-            icon="✦"
+            icon={todos.length === 0 ? SparkleIcon : InboxIcon}
             title={todos.length === 0 ? 'No tasks yet' : 'Nothing matches'}
           >
             {todos.length === 0
-              ? 'Add your first task above — give it a title and hit Add Task.'
+              ? 'Type a title above and press Enter to add your first task.'
               : 'Try clearing your search or switching the filter.'}
           </EmptyState>
         ) : (
@@ -131,26 +162,32 @@ export function Sidebar({
                   e.stopPropagation();
                   onToggleTodo(todo);
                 }}
+                aria-label={todo.completed ? `Reopen ${todo.title}` : `Complete ${todo.title}`}
               >
-                {todo.completed ? '✓' : ''}
+                <CheckIcon />
               </button>
               <div className="task-row-body">
-                <strong>{todo.title}</strong>
-                <span>{todo.description || 'No description'}</span>
-                <small>
-                  <b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>
-                  {todo.due_date && (
-                    <b className={`due-pill ${isOverdue(todo) ? 'overdue' : ''}`}>{dueLabel(todo)}</b>
+                <span className="task-title">{todo.title}</span>
+                {todo.description && <span className="task-desc">{todo.description}</span>}
+                <span className="task-meta">
+                  {todo.due_date ? (
+                    <b className={`due-pill ${isOverdue(todo) ? 'overdue' : ''}`}>
+                      <ClockIcon />
+                      {dueLabel(todo)}
+                    </b>
+                  ) : (
+                    <b className={`pill ${todo.priority}`}>{priorityLabel[todo.priority]}</b>
                   )}
-                  {todo.tags ? ` · ${todo.tags}` : ''}
-                </small>
+                  {todo.tags && <span className="meta-text">{todo.tags}</span>}
+                </span>
               </div>
               <button
-                className="ghost"
+                className="board-btn"
                 onClick={(e) => {
                   e.stopPropagation();
                   onPlaceOnBoard(todo);
                 }}
+                aria-label={`Place ${todo.title} on board`}
               >
                 Board
               </button>

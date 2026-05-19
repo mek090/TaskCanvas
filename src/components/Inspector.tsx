@@ -1,9 +1,11 @@
 import type { Priority, Todo } from '../lib/types';
+import { priorityLabel } from '../lib/types';
 import { dueLabel, isOverdue, normalizeDueDate } from '../lib/dates';
 import { EditableInput } from './EditableInput';
 import { EditableTextarea } from './EditableTextarea';
 import { EmptyState } from './EmptyState';
 import { TipsCard } from './TipsCard';
+import { CheckIcon, ClockIcon, RestoreIcon, SparkleIcon, TrashIcon } from './Icon';
 
 type Props = {
   selectedTodo: Todo | null;
@@ -12,10 +14,17 @@ type Props = {
   onDelete: (id: string) => void;
 };
 
+const PRIORITIES: Priority[] = ['low', 'medium', 'high'];
+
 export function Inspector({ selectedTodo, onUpdate, onToggle, onDelete }: Props) {
   return (
     <aside className="inspector">
-      <h2>Inspector</h2>
+      <div className="inspector-head">
+        <span className="eyebrow">Inspector</span>
+        {selectedTodo && (
+          <span className={`pill ${selectedTodo.priority}`}>{priorityLabel[selectedTodo.priority]}</span>
+        )}
+      </div>
       {selectedTodo ? (
         <div className="inspector-form">
           <label>
@@ -34,14 +43,21 @@ export function Inspector({ selectedTodo, onUpdate, onToggle, onDelete }: Props)
           </label>
           <label>
             Priority
-            <select
-              value={selectedTodo.priority}
-              onChange={(e) => onUpdate(selectedTodo.id, { priority: e.target.value as Priority })}
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
+            <div className="segmented-priority" role="radiogroup" aria-label="Priority">
+              {PRIORITIES.map((p) => (
+                <button
+                  type="button"
+                  key={p}
+                  data-prio={p}
+                  className={selectedTodo.priority === p ? 'active' : ''}
+                  onClick={() => onUpdate(selectedTodo.id, { priority: p })}
+                  aria-checked={selectedTodo.priority === p}
+                  role="radio"
+                >
+                  {priorityLabel[p]}
+                </button>
+              ))}
+            </div>
           </label>
           <label>
             Due date
@@ -53,6 +69,7 @@ export function Inspector({ selectedTodo, onUpdate, onToggle, onDelete }: Props)
           </label>
           {selectedTodo.due_date && (
             <div className={`due-summary ${isOverdue(selectedTodo) ? 'overdue' : ''}`}>
+              <ClockIcon />
               {dueLabel(selectedTodo)}
             </div>
           )}
@@ -63,20 +80,28 @@ export function Inspector({ selectedTodo, onUpdate, onToggle, onDelete }: Props)
               onCommit={(v) => onUpdate(selectedTodo.id, { tags: v })}
             />
           </label>
-          <button onClick={() => onToggle(selectedTodo)}>
-            {selectedTodo.completed ? 'Reopen task' : 'Mark complete'}
-          </button>
-          <button className="danger" onClick={() => onDelete(selectedTodo.id)}>
-            Delete task
-          </button>
+          <div className="inspector-actions">
+            <button
+              className={`toggle-btn ${selectedTodo.completed ? '' : 'complete-btn'}`}
+              onClick={() => onToggle(selectedTodo)}
+            >
+              {selectedTodo.completed ? <RestoreIcon /> : <CheckIcon />}
+              <span style={{ marginLeft: 6 }}>{selectedTodo.completed ? 'Reopen task' : 'Mark complete'}</span>
+            </button>
+            <button className="danger" onClick={() => onDelete(selectedTodo.id)} aria-label="Delete task">
+              <TrashIcon />
+              <span style={{ marginLeft: 6 }}>Delete task</span>
+            </button>
+          </div>
         </div>
       ) : (
-        <EmptyState icon="◐" title="No task selected">
-          Click a task in the sidebar to edit details here. Images pasted while a task is selected will
-          link to it.
-        </EmptyState>
+        <>
+          <EmptyState icon={SparkleIcon} title="No task selected">
+            Click any sidebar task to edit details here. Images pasted while a task is selected will link to it.
+          </EmptyState>
+          <TipsCard />
+        </>
       )}
-      <TipsCard />
     </aside>
   );
 }

@@ -7,7 +7,12 @@ import {
   compareTodosByUpdated,
   normalizeDueDate,
 } from './lib/dates';
-import { fileToDataUrl, isTextEditingTarget } from './lib/files';
+import {
+  computeImageCardSize,
+  fileToDataUrl,
+  isTextEditingTarget,
+  readImageDimensions,
+} from './lib/files';
 import type {
   Attachment,
   BoardItem,
@@ -20,6 +25,28 @@ import type {
 } from './lib/types';
 import { useToast } from './hooks/useToast';
 import { useConfirm } from './hooks/useConfirm';
+import { useCanvasPanZoom, type WorldBounds } from './hooks/useCanvasPanZoom';
+
+const WORKSPACE_MIN_WIDTH = 1600;
+const WORKSPACE_MIN_HEIGHT = 1000;
+const WORKSPACE_PADDING = 240;
+
+function computeWorldBounds(items: BoardItem[]): WorldBounds {
+  if (items.length === 0) {
+    return { x: 0, y: 0, width: WORKSPACE_MIN_WIDTH, height: WORKSPACE_MIN_HEIGHT };
+  }
+  let minX = 0;
+  let minY = 0;
+  let maxX = WORKSPACE_MIN_WIDTH;
+  let maxY = WORKSPACE_MIN_HEIGHT;
+  for (const item of items) {
+    minX = Math.min(minX, item.x - WORKSPACE_PADDING);
+    minY = Math.min(minY, item.y - WORKSPACE_PADDING);
+    maxX = Math.max(maxX, item.x + item.width + WORKSPACE_PADDING);
+    maxY = Math.max(maxY, item.y + item.height + WORKSPACE_PADDING);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { CanvasView } from './components/CanvasView';
@@ -58,6 +85,13 @@ export function App() {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const latestDraggedItem = useRef<BoardItem | null>(null);
   const todosRef = useRef<Todo[]>([]);
+
+  const worldBounds = useMemo(() => computeWorldBounds(items), [items]);
+  const panZoom = useCanvasPanZoom({
+    enabled: mode === 'canvas',
+    viewportRef: canvasRef,
+    bounds: worldBounds,
+  });
 
   useEffect(() => {
     todosRef.current = todos;
@@ -313,6 +347,8 @@ export function App() {
   const saveImage = useCallback(
     async (dataUrl: string, fileName?: string, point?: { x: number; y: number }) => {
       try {
+        const natural = await readImageDimensions(dataUrl);
+        const size = computeImageCardSize(natural.width, natural.height);
         await call('save_image_data_url', {
           dataUrl,
           fileName,
@@ -320,6 +356,8 @@ export function App() {
           boardId: 'main',
           x: point?.x ?? 120,
           y: point?.y ?? 120,
+          width: size.width,
+          height: size.height,
         });
         setStatus('Image saved locally and added to canvas');
         await refresh();
@@ -344,17 +382,21 @@ export function App() {
         const dataUrl = await fileToDataUrl(file);
         const canvas = canvasRef.current;
         const point = canvas
-          ? {
-              x: canvas.scrollLeft + canvas.clientWidth / 2 - 130,
-              y: canvas.scrollTop + canvas.clientHeight / 2 - 90,
-            }
+          ? panZoom.screenToWorld(
+              canvas.getBoundingClientRect().left + canvas.clientWidth / 2,
+              canvas.getBoundingClientRect().top + canvas.clientHeight / 2,
+              canvas.getBoundingClientRect(),
+            )
           : { x: 150, y: 150 };
-        await saveImage(dataUrl, `pasted-${Date.now()}.png`, point);
+        await saveImage(dataUrl, `pasted-${Date.now()}.png`, {
+          x: point.x - 130,
+          y: point.y - 90,
+        });
       } catch (err) {
         setStatus(`Paste failed: ${String(err)}`);
       }
     },
-    [saveImage],
+    [panZoom, saveImage],
   );
 
   useEffect(() => {
@@ -367,11 +409,8 @@ export function App() {
       event.preventDefault();
       const canvas = canvasRef.current;
       const rect = canvas?.getBoundingClientRect();
-      const point = rect && canvas
-        ? {
-            x: event.clientX - rect.left + canvas.scrollLeft,
-            y: event.clientY - rect.top + canvas.scrollTop,
-          }
+      const point = rect
+        ? panZoom.screenToWorld(event.clientX, event.clientY, rect)
         : { x: 140, y: 140 };
       const imageFiles = Array.from(event.dataTransfer.files).filter((file) =>
         file.type.startsWith('image/'),
@@ -385,7 +424,7 @@ export function App() {
         }
       }
     },
-    [saveImage],
+    [panZoom, saveImage],
   );
 
   const beginDrag = useCallback(
@@ -436,14 +475,14 @@ export function App() {
   const moveDrag = useCallback(
     (event: React.PointerEvent) => {
       if (!drag) return;
-      const dx = event.clientX - drag.startX;
-      const dy = event.clientY - drag.startY;
+      const dx = (event.clientX - drag.startX) / panZoom.zoom;
+      const dy = (event.clientY - drag.startY) / panZoom.zoom;
       const nextDraggedItem =
         drag.mode === 'move'
           ? {
               ...drag.original,
-              x: Math.max(-40, drag.original.x + dx),
-              y: Math.max(-40, drag.original.y + dy),
+              x: drag.original.x + dx,
+              y: drag.original.y + dy,
             }
           : {
               ...drag.original,
@@ -458,7 +497,7 @@ export function App() {
         }),
       );
     },
-    [drag],
+    [drag, panZoom.zoom],
   );
 
   const deleteCanvasItem = useCallback(
@@ -622,6 +661,14 @@ export function App() {
             onBeginDrag={beginDrag}
             onSelectTodo={setSelectedTodoId}
             onDeleteItem={deleteCanvasItem}
+            transform={panZoom.transform}
+            zoom={panZoom.zoom}
+            isSpaceDown={panZoom.isSpaceDown}
+            isPanning={panZoom.isPanning}
+            canvasClass={panZoom.canvasClass}
+            panBindings={panZoom.bindings}
+            onReset={panZoom.reset}
+            worldBounds={worldBounds}
           />
         ) : (
           <ListView
@@ -634,6 +681,7 @@ export function App() {
             onDelete={deleteTodo}
             onRestore={restoreTodo}
             onPurge={purgeTodo}
+            onSelectTodo={setSelectedTodoId}
           />
         )}
       </section>

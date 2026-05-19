@@ -1,6 +1,13 @@
 import type { SortMode, TaskFilter } from '../lib/types';
+import { SearchIcon } from './Icon';
 
-const FILTERS: readonly TaskFilter[] = ['all', 'active', 'due', 'done', 'trash'] as const;
+const FILTERS: ReadonlyArray<{ key: TaskFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'active', label: 'Active' },
+  { key: 'due', label: 'Due' },
+  { key: 'done', label: 'Done' },
+  { key: 'trash', label: 'Trash' },
+];
 
 type Props = {
   query: string;
@@ -10,6 +17,7 @@ type Props = {
   sortMode: SortMode;
   onSortChange: (s: SortMode) => void;
   showSort: boolean;
+  counts: Partial<Record<TaskFilter, number>>;
 };
 
 export function SearchToolbar({
@@ -20,33 +28,49 @@ export function SearchToolbar({
   sortMode,
   onSortChange,
   showSort,
+  counts,
 }: Props) {
   return (
     <div className="toolbar">
-      <input
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        placeholder="Search tasks"
-      />
-      <div className="segmented">
-        {FILTERS.map((name) => (
-          <button
-            className={filter === name ? 'active' : ''}
-            onClick={() => onFilterChange(name)}
-            key={name}
-          >
-            {name}
-          </button>
-        ))}
+      <div className="search-box">
+        <SearchIcon />
+        <input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Search tasks"
+          aria-label="Search tasks"
+        />
+      </div>
+      <div className="segmented" role="group" aria-label="Task filter">
+        {FILTERS.map(({ key, label }) => {
+          const count = counts[key];
+          return (
+            <button
+              key={key}
+              type="button"
+              className={filter === key ? 'active' : ''}
+              onClick={() => onFilterChange(key)}
+              aria-pressed={filter === key}
+              aria-label={key}
+            >
+              {label}
+              {typeof count === 'number' && count > 0 && <span className="count">{count}</span>}
+            </button>
+          );
+        })}
       </div>
       {showSort && (
-        <label className="compact-label">
-          Sort
-          <select value={sortMode} onChange={(e) => onSortChange(e.target.value as SortMode)}>
+        <div className="sort-bar">
+          <span>Sort</span>
+          <select
+            aria-label="Sort tasks"
+            value={sortMode}
+            onChange={(e) => onSortChange(e.target.value as SortMode)}
+          >
             <option value="due">Due date first</option>
             <option value="updated">Recently updated</option>
           </select>
-        </label>
+        </div>
       )}
     </div>
   );

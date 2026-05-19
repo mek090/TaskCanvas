@@ -1,4 +1,5 @@
 import type { ToastState } from '../hooks/useToast';
+import { CloseIcon } from './Icon';
 
 type Props = {
   toast: ToastState;
@@ -15,7 +16,7 @@ export function Toast({ toast, onDismiss }: Props) {
         </button>
       )}
       <button className="toast-close" onClick={onDismiss} aria-label="Dismiss">
-        ×
+        <CloseIcon />
       </button>
     </div>
   );

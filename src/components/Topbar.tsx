@@ -1,4 +1,5 @@
 import type { Mode } from '../lib/types';
+import { CanvasIcon, DownloadIcon, ListIcon, TrashIcon, UploadIcon } from './Icon';
 
 type Props = {
   isTrashView: boolean;
@@ -21,34 +22,53 @@ export function Topbar({
   onExport,
   onImport,
 }: Props) {
-  const title = isTrashView ? 'Trash' : mode === 'canvas' ? 'Canvas Board' : 'List Mode';
+  const title = isTrashView ? 'Trash' : mode === 'canvas' ? 'Canvas Board' : 'List View';
+  const statusKind = /fail|error/i.test(status) ? 'error' : /saving|loading|loading|busy/i.test(status) ? 'busy' : '';
   return (
     <header className="topbar">
-      <div>
+      <div className="topbar-left">
         <h2>{title}</h2>
-        <p className="status">
-          <span
-            className={`status-dot ${/fail|error/i.test(status) ? 'error' : ''}`}
-            aria-hidden="true"
-          />
+        <span className={`status-chip ${statusKind}`} role="status">
+          <span className="status-dot" aria-hidden="true" />
           {status}
-        </p>
+        </span>
       </div>
-      <div className="actions">
-        <button className={mode === 'canvas' ? 'active' : ''} onClick={() => onModeChange('canvas')}>
-          Canvas
-        </button>
-        <button className={mode === 'list' ? 'active' : ''} onClick={() => onModeChange('list')}>
-          List
-        </button>
-        <span className="divider" aria-hidden="true" />
+      <div className="topbar-actions">
+        {!isTrashView && (
+          <div className="mode-switch" role="group" aria-label="View mode">
+            <button
+              type="button"
+              className={mode === 'canvas' ? 'active' : ''}
+              aria-pressed={mode === 'canvas'}
+              onClick={() => onModeChange('canvas')}
+            >
+              <CanvasIcon />
+              Canvas
+            </button>
+            <button
+              type="button"
+              className={mode === 'list' ? 'active' : ''}
+              aria-pressed={mode === 'list'}
+              onClick={() => onModeChange('list')}
+            >
+              <ListIcon />
+              List
+            </button>
+          </div>
+        )}
         {showEmptyTrash && (
-          <button className="danger" onClick={onEmptyTrash}>
-            Empty trash
+          <button className="danger" onClick={onEmptyTrash} aria-label="Empty trash">
+            <TrashIcon />
+            <span style={{ marginLeft: 6 }}>Empty trash</span>
           </button>
         )}
-        <button onClick={onExport}>Export</button>
-        <button onClick={onImport}>Import</button>
+        <span className="action-divider" aria-hidden="true" />
+        <button className="icon" onClick={onExport} aria-label="Export backup" title="Export backup">
+          <DownloadIcon />
+        </button>
+        <button className="icon" onClick={onImport} aria-label="Import backup" title="Import backup">
+          <UploadIcon />
+        </button>
       </div>
     </header>
   );
